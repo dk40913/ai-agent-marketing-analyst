@@ -1,0 +1,11 @@
+.env
+python=3.11.8/
+ai-agent-env/
+__pycache__/
+*.pyc
+.env
+chromadb/
+data/csv/
+data/knowledge_base/
+.DS_Store
+.claude/
