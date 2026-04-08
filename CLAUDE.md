@@ -5,6 +5,19 @@
 - 遇到新技術或術語（FastAPI、LangGraph、RAG、ChromaDB 等），在當下解釋清楚，不要假設我已經懂
 - 說明要具體，避免抽象（例如「FastAPI 會幫你自動產生 /docs 頁面，你現在看到的 Swagger UI 就是這個」）
 
+## 每個 Phase 結束時推上 GitHub
+
+GitHub Repo：https://github.com/dk40913/ai-agent-marketing-analyst
+
+每個 Phase 的 code 完成後，自動執行：
+```
+git add .
+git commit -m "phase-x: 簡短說明這個 phase 做了什麼"
+git push
+```
+
+commit message 格式：`phase-a: ...`、`phase-b: ...`，依此類推。
+
 ## 階段結束時存 Obsidian 筆記
 - 每個實作階段（data、api、rag、agents、tools、experiments）完成後，自動將該階段的學習重點、程式碼說明、重要概念整理成筆記
 - 筆記存放位置：`/Users/herb/Documents/Obsidian/AI Agent實作筆記/`
