@@ -27,6 +27,7 @@ from config.llm import llm, safe_invoke
 from agents.workers.data_agent import data_agent
 from agents.workers.analysis_agent import analysis_agent
 from agents.workers.report_agent import report_agent
+from agents.workers.reviewer_agent import reviewer_agent
 
 
 # ── State 定義 ────────────────────────────────────────────────────────────────
@@ -142,6 +143,7 @@ def build_supervisor():
     graph.add_node("supervisor", supervisor)
     graph.add_node("data_agent", data_agent)
     graph.add_node("analysis_agent", analysis_agent)
+    graph.add_node("reviewer_agent", reviewer_agent)
     graph.add_node("report_agent", report_agent)
     graph.add_node("generate_final", generate_final)
 
@@ -154,7 +156,8 @@ def build_supervisor():
     # 每個 Worker 執行完都回到 Supervisor
     # 這是 Hub and Spoke 的關鍵：Worker 不直接連到下一個 Worker
     graph.add_edge("data_agent", "supervisor")
-    graph.add_edge("analysis_agent", "supervisor")
+    graph.add_edge("analysis_agent", "reviewer_agent")   # 分析完先過審核
+    graph.add_edge("reviewer_agent", "supervisor")        # 審核完再回 supervisor
     graph.add_edge("report_agent", "supervisor")
 
     # generate_final 是終點
