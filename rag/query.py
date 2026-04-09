@@ -3,37 +3,20 @@ RAG 查詢：使用者問題 → ChromaDB 搜尋相關段落 → 送 Gemini → 
 """
 
 import os
-from dotenv import load_dotenv
+import sys
 import chromadb
-
-load_dotenv()
 from chromadb.utils import embedding_functions
 from langchain_core.messages import HumanMessage
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+sys.path.insert(0, BASE_DIR)
 CHROMA_DIR = os.path.join(BASE_DIR, "chromadb")
 
 client = chromadb.PersistentClient(path=CHROMA_DIR)
 ef = embedding_functions.DefaultEmbeddingFunction()
 collection = client.get_collection(name="marketing_knowledge", embedding_function=ef)
 
-# LLM_PROVIDER 環境變數控制來源：groq（預設）或 gemini（面試 demo 用）
-_provider = os.environ.get("LLM_PROVIDER", "groq").lower()
-
-if _provider == "gemini":
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.environ.get("GOOGLE_API_KEY"),
-        temperature=0,
-    )
-else:
-    from langchain_groq import ChatGroq
-    llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
-        api_key=os.environ.get("GROQ_API_KEY"),
-        temperature=0,
-    )
+from config.llm import llm, safe_invoke
 
 
 def rag_query(question: str, n_results: int = 3) -> dict:
@@ -66,10 +49,10 @@ def rag_query(question: str, n_results: int = 3) -> dict:
 {question}
 """
 
-    response = llm.invoke([HumanMessage(content=prompt)])
+    answer = safe_invoke(llm, [HumanMessage(content=prompt)], fallback="無法取得回答")
 
     return {
-        "answer": response.content,
+        "answer": answer,
         "retrieved_chunks": retrieved_chunks,
         "sources": sources,
     }

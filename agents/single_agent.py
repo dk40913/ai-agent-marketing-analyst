@@ -14,9 +14,6 @@ import os
 import sys
 import pandas as pd
 from typing import TypedDict, Literal
-from dotenv import load_dotenv
-
-load_dotenv()
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -26,18 +23,9 @@ from langchain_core.messages import HumanMessage, AIMessage
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, BASE_DIR)
 from rag.query import rag_query
+from config.llm import llm
 
 CSV_DIR = os.path.join(BASE_DIR, "data", "csv")
-
-# ── LLM 設定（與 rag/query.py 相同的切換邏輯）────────────────────────────────
-
-_provider = os.environ.get("LLM_PROVIDER", "groq").lower()
-if _provider == "gemini":
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
-else:
-    from langchain_groq import ChatGroq
-    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
 
 # ── State 定義 ────────────────────────────────────────────────────────────────
 # TypedDict 讓每個欄位都有型別，方便 IDE 提示也讓程式更好讀
