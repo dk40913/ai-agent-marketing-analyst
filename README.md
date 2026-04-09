@@ -28,7 +28,7 @@
 |-------|------|------|
 | Phase 0 | RAG + FastAPI 基礎建設 | ✅ 完成 |
 | Phase A | LangGraph 單一 Agent | ✅ 完成 |
-| Phase B | Multi-Agent 協作架構 | 🔲 進行中 |
+| Phase B | Multi-Agent 協作架構 | ✅ 完成 |
 | Phase C | 業務流程拆解思維 | 🔲 未開始 |
 | Phase D | 向量資料庫選型實作 | 🔲 未開始 |
 
