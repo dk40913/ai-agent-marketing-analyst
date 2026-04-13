@@ -7,13 +7,22 @@ FastAPI 資料查詢服務
 """
 
 import os
+import sys
+import uuid
+import asyncio
 import pandas as pd
 from fastapi import FastAPI, Query, HTTPException
+from pydantic import BaseModel
 from typing import Optional
+
+BASE_DIR_ROOT = os.path.dirname(os.path.dirname(__file__))
+sys.path.insert(0, BASE_DIR_ROOT)
+
+from agents.supervisor import multi_agent
 
 app = FastAPI(title="行銷數據 API", version="1.0")
 
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+BASE_DIR = BASE_DIR_ROOT
 CSV_DIR = os.path.join(BASE_DIR, "data", "csv")
 
 
@@ -103,4 +112,44 @@ def get_adspend(
         "filters": {"brand": brand, "platform": platform, "start": start, "end": end},
         "summary": summary,
         "records": df.to_dict(orient="records"),
+    }
+
+
+# ── /analyze ──────────────────────────────────────────────────────────────────
+
+class AnalyzeRequest(BaseModel):
+    question: str
+
+
+@app.post("/analyze", summary="Multi-Agent 分析（輸入問題，回傳完整分析報告）")
+async def analyze(req: AnalyzeRequest):
+    """
+    把使用者的自然語言問題丟給 Multi-Agent 系統。
+    流程：Supervisor → Data / Analysis / Reviewer / Report Agent → 最終回答
+
+    為什麼用 async + asyncio.to_thread？
+    FastAPI 是非同步框架，如果直接呼叫同步的 multi_agent.invoke()，
+    它會卡住 Event Loop，導致同時間其他 request 全部等待。
+    asyncio.to_thread() 會把同步函式丟到背景執行緒裡跑，FastAPI 就不會被卡住。
+    """
+    # 每個 request 產生獨立的 thread_id，避免不同問題的對話歷史互相污染
+    thread_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
+
+    initial_state = {
+        "question": req.question,
+        "messages": [],
+        "data_result": "",
+        "analysis_result": "",
+        "report": "",
+        "next_worker": "",
+        "final_answer": "",
+    }
+
+    result = await asyncio.to_thread(multi_agent.invoke, initial_state, config)
+
+    return {
+        "question": req.question,
+        "answer": result["final_answer"],
+        "thread_id": thread_id,
     }
