@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .env
 chromadb/
+experiments/vector_db_comparison/chroma_experiment/
 data/csv/
 data/knowledge_base/
 .DS_Store
