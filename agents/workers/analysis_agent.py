@@ -102,7 +102,15 @@ def analysis_agent(state: dict) -> dict:
         analysis_result = safe_invoke(llm, [HumanMessage(content=final_prompt)], fallback=data_result)
     else:
         # LLM 判斷不需要查知識庫，直接用數字做分析
-        analysis_result = response.content or data_result
+        # response.content 在某些 LangChain 版本下可能是 list（content blocks），
+        # 需要正規化成純字串
+        content = response.content
+        if isinstance(content, list):
+            content = " ".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in content
+            )
+        analysis_result = content or data_result
 
     print(f"  [analysis_agent] 完成")
     return {**state, "analysis_result": analysis_result}

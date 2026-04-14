@@ -50,11 +50,70 @@ class SupervisorState(TypedDict):
 # ── Supervisor Node ───────────────────────────────────────────────────────────
 # Supervisor 的核心邏輯：看目前 State 有哪些結果，決定下一步叫誰
 
+def resolve_question(question: str, history_text: str) -> str:
+    """
+    兩步驟問題解析：
+      Step 1：讓 LLM 判斷問題是否有指代不明（代詞、「這家」「前面那個」等）
+      Step 2：有指代不明時，根據對話歷史改寫成帶明確品牌名的問題
+
+    比起用固定代詞清單判斷，LLM 能處理清單覆蓋不到的說法。
+    第一輪對話（沒有歷史）直接跳過，不做任何改寫。
+    """
+    # 第一輪沒有歷史，無從解析，直接回傳
+    if "（這是第一輪對話）" in history_text:
+        return question
+
+    # Step 1：讓 LLM 判斷問題是否有指代不明
+    check_prompt = f"""這個問題是否有指代不明的地方？
+指代不明的意思是：問題裡有「他」「它」「那個品牌」「這家」「前面那個」等需要靠上下文才能知道指的是誰的詞。
+只回答 yes 或 no，不要解釋。
+
+問題：{question}"""
+
+    has_ambiguity = safe_invoke(llm, [HumanMessage(content=check_prompt)], fallback="no").strip().lower()
+
+    if "yes" not in has_ambiguity:
+        return question  # 問題清楚，不需要改寫
+
+    # Step 2：根據對話歷史改寫問題，把代詞換成明確名稱
+    rewrite_prompt = f"""根據以下對話歷史，把問題裡的代詞替換成明確的品牌名稱或主題。
+只輸出改寫後的問題，不要解釋，不要加任何標點以外的文字。
+
+【對話歷史】
+{history_text}
+
+【原始問題】
+{question}
+
+【改寫後的問題】"""
+
+    resolved = safe_invoke(llm, [HumanMessage(content=rewrite_prompt)], fallback=question).strip()
+
+    # 防禦：改寫後仍含代詞，代表 LLM 沒改成功，退回原問題
+    PRONOUNS = ["他", "它", "她", "這個品牌", "那個品牌"]
+    if any(p in resolved for p in PRONOUNS):
+        return question
+
+    print(f"  [supervisor] 問題改寫：「{question}」→「{resolved}」")
+    return resolved
+
+
 def supervisor(state: SupervisorState) -> SupervisorState:
     question = state["question"]
     data_result = state.get("data_result", "")
     analysis_result = state.get("analysis_result", "")
     report = state.get("report", "")
+
+    # ── Problem 2 修正：從 messages 建立對話歷史 ──────────────────────────────
+    # messages 裡存著之前幾輪的 HumanMessage / AIMessage
+    # 把最近 4 則（2 輪）整理成文字，讓 Supervisor 理解「那」「它」等代詞指的是什麼
+    history_lines = []
+    for msg in state.get("messages", [])[-4:]:
+        if hasattr(msg, "content"):
+            role = "使用者" if msg.__class__.__name__ == "HumanMessage" else "AI"
+            # 只取前 150 字，避免 prompt 過長
+            history_lines.append(f"{role}：{msg.content[:150]}")
+    history_text = "\n".join(history_lines) if history_lines else "（這是第一輪對話）"
 
     # 把目前已完成的工作列出來，讓 LLM 知道進度
     completed = []
@@ -67,10 +126,19 @@ def supervisor(state: SupervisorState) -> SupervisorState:
 
     completed_text = "\n".join(completed) if completed else "（尚未開始）"
 
-    prompt = f"""你是一個 Multi-Agent 系統的 Supervisor。
-根據使用者問題和目前完成的工作，決定下一步要呼叫哪個 Worker。
+    # 第一次呼叫（data_result 還是空的）才做問題解析，避免每輪都重複呼叫 LLM
+    if not data_result:
+        question = resolve_question(question, history_text)
+        # 把解析後的問題寫回 state，Worker 才能拿到
+        state = {**state, "question": question}
 
-【使用者問題】
+    prompt = f"""你是一個 Multi-Agent 系統的 Supervisor。
+根據使用者問題、對話歷史和目前完成的工作，決定下一步要呼叫哪個 Worker。
+
+【對話歷史（最近幾輪）】
+{history_text}
+
+【本輪使用者問題】
 {question}
 
 【已完成的工作】
@@ -83,10 +151,12 @@ def supervisor(state: SupervisorState) -> SupervisorState:
 - "end"：所有工作完成，結束流程
 
 規則：
-1. 通常順序是 data → analysis → report → end
-2. 簡單的數字查詢可以只做 data → end
-3. report 必須在 data 和 analysis 都完成後才能執行
-4. 所有需要的 Worker 都完成後，輸出 "end"
+1. 預設流程是 data → analysis → report → end
+2. 只有問題是「純數字查詢」（例如：只問某品牌的銷售額數字、某個 KPI 的數值），才可以 data → end 跳過 analysis
+3. 只要問題包含「原因」「為什麼」「分析」「建議」「比較」「改善」「下滑」「異常」等字眼，必須走完整流程
+4. report 必須在 data 和 analysis 都完成後才能執行
+5. 如果問題有代詞（「那」「它」「這個品牌」），請參考對話歷史找到實際指的品牌或主題
+6. 所有需要的 Worker 都完成後，輸出 "end"
 
 只輸出一個單字：data、analysis、report 或 end。不要解釋。"""
 

@@ -119,6 +119,7 @@ def get_adspend(
 
 class AnalyzeRequest(BaseModel):
     question: str
+    thread_id: Optional[str] = None  # 不填代表開新對話，填入則繼續舊對話
 
 
 @app.post("/analyze", summary="Multi-Agent 分析（輸入問題，回傳完整分析報告）")
@@ -127,18 +128,20 @@ async def analyze(req: AnalyzeRequest):
     把使用者的自然語言問題丟給 Multi-Agent 系統。
     流程：Supervisor → Data / Analysis / Reviewer / Report Agent → 最終回答
 
-    為什麼用 async + asyncio.to_thread？
-    FastAPI 是非同步框架，如果直接呼叫同步的 multi_agent.invoke()，
-    它會卡住 Event Loop，導致同時間其他 request 全部等待。
-    asyncio.to_thread() 會把同步函式丟到背景執行緒裡跑，FastAPI 就不會被卡住。
+    多輪對話用法：
+      第一次不帶 thread_id → 系統產生新的，回傳給前端
+      之後每次帶入同一個 thread_id → MemorySaver 自動載入歷史 messages
     """
-    # 每個 request 產生獨立的 thread_id，避免不同問題的對話歷史互相污染
-    thread_id = str(uuid.uuid4())
+    # 有帶 thread_id 就繼續舊對話，沒有就開新的
+    thread_id = req.thread_id or str(uuid.uuid4())
+    is_new_conversation = req.thread_id is None
+
     config = {"configurable": {"thread_id": thread_id}}
 
     initial_state = {
         "question": req.question,
-        "messages": [],
+        # 新對話才清空 messages；舊對話讓 MemorySaver 自動從記憶體載入歷史
+        "messages": [] if is_new_conversation else None,
         "data_result": "",
         "analysis_result": "",
         "report": "",
@@ -146,10 +149,15 @@ async def analyze(req: AnalyzeRequest):
         "final_answer": "",
     }
 
+    # None 的欄位不傳入，避免覆蓋 MemorySaver 已儲存的值
+    if not is_new_conversation:
+        del initial_state["messages"]
+
     result = await asyncio.to_thread(multi_agent.invoke, initial_state, config)
 
     return {
         "question": req.question,
         "answer": result["final_answer"],
         "thread_id": thread_id,
+        "is_new_conversation": is_new_conversation,
     }

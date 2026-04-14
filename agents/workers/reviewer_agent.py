@@ -43,6 +43,12 @@ def reviewer_agent(state: dict) -> dict:
     - 修正（revised）：把問題指出來，並附上修正後的版本
     """
     analysis_result = state.get("analysis_result", "")
+    # 防禦：analysis_result 有時會是 list（LangChain content blocks），轉成字串
+    if isinstance(analysis_result, list):
+        analysis_result = " ".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in analysis_result
+        )
     data_result = state.get("data_result", "")
     question = state.get("question", "")
 
@@ -88,7 +94,8 @@ def reviewer_agent(state: dict) -> dict:
         reviewed_analysis = analysis_result + "\n\n---\n*✅ 經 Reviewer Agent 審核：邏輯符合業務常理*"
     else:
         print(f"  [reviewer_agent] 發現問題，已修正")
-        # 把修正後的版本整個替換掉 analysis_result
-        reviewed_analysis = review
+        # 從【說明】後面提取修正內容，去掉審核框架文字
+        parts = review.split("【說明】")
+        reviewed_analysis = parts[1].strip() if len(parts) > 1 else review
 
     return {**state, "analysis_result": reviewed_analysis}
